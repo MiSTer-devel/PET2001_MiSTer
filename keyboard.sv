@@ -4,7 +4,7 @@ module keyboard
 	input             reset,
 	input             clk,
 
-	input      [64:0] ps2_key,
+	input      [10:0] ps2_key,
 
 	input       [3:0] keyrow,
 	output      [7:0] keyin,
@@ -14,9 +14,9 @@ module keyboard
 	output reg  [2:0] mod = 0
 );
 
-wire pressed    = (ps2_key[15:8] != 8'hf0);
-wire extended   = (~pressed ? (ps2_key[23:16] == 8'he0) : (ps2_key[15:8] == 8'he0));
-wire [8:0] code = ps2_key[63:24] ? 9'd0 : {extended, ps2_key[7:0]}; // filter out PRNSCR and PAUSE
+wire pressed    = ps2_key[9];
+//wire extended   = ps2_key[8];
+wire [7:0] code = ps2_key[7:0];
 
 reg  [7:0] keys[10];
 wire       release_btn = ~pressed;
@@ -45,10 +45,10 @@ always @(posedge clk) begin
 		shift_lock <= 0;
 	end
 	
-	old_stb <= ps2_key[64];
+	old_stb <= ps2_key[10];
 
-	if(old_stb != ps2_key[64]) begin
-		case(code[7:0])
+	if(old_stb != ps2_key[10]) begin
+		case(code)
 			8'h59: mod[0]<= ~release_btn; // right shift
 			8'h12: mod[0]<= ~release_btn; // Left shift
 			8'h11: mod[1]<= ~release_btn; // alt
@@ -66,7 +66,7 @@ always @(posedge clk) begin
 			8'h78: Fn[11]<= ~release_btn; // F11
 		endcase
 
-		case(code[7:0])
+		case(code)
 			'h76: begin
 						keys[9][4] <= release_btn; // ESC -> STOP
 						if(~release_btn) keys[8][5] <= 1;

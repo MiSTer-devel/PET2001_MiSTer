@@ -2,7 +2,7 @@
 //  PET2001
 //
 //  Port to MiSTer
-//  Copyright (C) 2017 Sorgelig
+//  Copyright (C) 2017,2018 Sorgelig
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -51,7 +51,7 @@ module emu
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
-	// b[1]: 0 - LED status is system status ORed with b[0]
+	// b[1]: 0 - LED status is system status OR'd with b[0]
 	//       1 - LED status is controled solely by b[0]
 	// hint: supply 2'b00 to let the system control the LED.
 	output  [1:0] LED_POWER,
@@ -60,6 +60,7 @@ module emu
 	output [15:0] AUDIO_L,
 	output [15:0] AUDIO_R,
 	output        AUDIO_S, // 1 - signed audio samples, 0 - unsigned
+	output  [1:0] AUDIO_MIX, // 0 - no mix, 1 - 25%, 2 - 50%, 3 - 100% (mono)
 	input         TAPE_IN,
 
 	// SD-SPI
@@ -67,6 +68,7 @@ module emu
 	output        SD_MOSI,
 	input         SD_MISO,
 	output        SD_CS,
+	input         SD_CD,
 
 	//High latency DDR3 RAM interface
 	//Use for non-critical time purposes
@@ -120,7 +122,7 @@ localparam CONF_STR =
 	"O1,Aspect Ratio,4:3,16:9;",
 	"-;",
 	"T6,Reset;",
-	"V,v0.62.",`BUILD_DATE
+	"V,v0.70.",`BUILD_DATE
 };
 
 ////////////////////   CLOCKS   ///////////////////
@@ -218,7 +220,7 @@ wire        ioctl_wr;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 reg         ioctl_wait = 0;
-wire [64:0] ps2_key;
+wire [10:0] ps2_key;
 
 hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 (
@@ -324,6 +326,7 @@ wire [1:0] audio = {audioDat ^ tape_write, tape_audio & tape_active & (status[8:
 assign AUDIO_L = {audio, 12'd0};
 assign AUDIO_R = AUDIO_L;
 assign AUDIO_S = 0;
+assign AUDIO_MIX = 0;
 
 wire        tape_audio;
 wire        tape_rd;
