@@ -49,7 +49,8 @@ module pet2001hw
 	output           pix,
 	output           HSync,
 	output           VSync,
-	output           de,
+	output           HBlank,
+	output           VBlank,
 
 	output [3:0]     keyrow, // Keyboard
 	input  [7:0]     keyin,

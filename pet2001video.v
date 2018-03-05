@@ -5,7 +5,8 @@ module pet2001video
 	output         pix,
 	output reg     HSync,
 	output reg     VSync,
-	output reg     de,
+	output reg     HBlank,
+	output reg     VBlank,
 
 	output [10:0]  video_addr,	// Video RAM intf
 	input  [7:0]   video_data,
@@ -53,7 +54,8 @@ always @(posedge clk) begin
 	if(ce_7mn) begin
 		if(!hc[2:0]) begin
 			{inv, vdata} <= ((hc<320) && (vc<200)) ? {video_data[7], chardata} : 9'd0;
-			de <= ((hc<320) && (vc<200));
+			HBlank <= (hc>=320);
+			VBlank <= (vc>=200);
 		end else vdata <= {vdata[6:0], 1'b0};
 	end
 end

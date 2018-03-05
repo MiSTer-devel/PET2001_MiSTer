@@ -29,7 +29,7 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-	inout  [43:0] HPS_BUS,
+	inout  [44:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
 	output        CLK_VIDEO,
@@ -120,6 +120,7 @@ localparam CONF_STR =
 	"-;",
 	"O2,Screen Color,White,Green;",
 	"O1,Aspect Ratio,4:3,16:9;",
+	"O45,Scandoubler Fx,None,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 	"T6,Reset;",
 	"V,v0.70.",`BUILD_DATE
@@ -221,6 +222,7 @@ wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 reg         ioctl_wait = 0;
 wire [10:0] ps2_key;
+wire        forced_scandoubler;
 
 hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 (
@@ -231,6 +233,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 	.buttons(buttons),
 	.status(status),
+   .forced_scandoubler(forced_scandoubler),
 
 	.ps2_key(ps2_key),
 
@@ -275,14 +278,8 @@ wire pix;
 wire HSync, VSync;
 wire audioDat;
 
-assign VGA_G = {8{pix}};
-assign VGA_R = status[2] ? 3'd0 : VGA_G;
-assign VGA_B = VGA_R;
-assign VGA_HS = HSync;
-assign VGA_VS = VSync;
-
 assign CLK_VIDEO = clk_sys;
-assign CE_PIXEL  = ce_7mp;
+wire HBlank, VBlank;
 
 pet2001hw hw
 (
@@ -291,8 +288,6 @@ pet2001hw hw
 
 	.data_out(cpu_data_in),
 	.data_in(cpu_data_out),
-
-	.de(VGA_DE),
 
 	.cass_motor_n(),
 	.cass_write(tape_write),
@@ -317,6 +312,25 @@ always @(posedge clk_sys) begin
 		if(ioctl_addr == 1) dma_off[15:8] <= ioctl_dout;
 	end
 end
+
+wire [1:0] scale = status[5:4];
+
+video_mixer #(.HALF_DEPTH(1)) video_mixer
+(
+	.*,
+	.ce_pix(ce_7mp),
+	.ce_pix_out(CE_PIXEL),
+	
+	.scanlines({scale == 3, scale == 2}),
+	.scandoubler(scale || forced_scandoubler),
+	.hq2x(scale==1),
+	.mono(0),
+
+	.R({4{~status[2] & pix}}),
+	.G({4{pix}}),
+	.B({4{~status[2] & pix}})
+);
+
  
 ////////////////////////////////////////////////////////////////////
 // Audio 																			//
