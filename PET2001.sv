@@ -2,7 +2,7 @@
 //  PET2001
 //
 //  Port to MiSTer
-//  Copyright (C) 2017,2018 Sorgelig
+//  Copyright (C) 2017-2019 Sorgelig
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -48,6 +48,8 @@ module emu
 	output        VGA_HS,
 	output        VGA_VS,
 	output        VGA_DE,    // = ~(VBlank | HBlank)
+	output        VGA_F1,
+	output  [1:0] VGA_SL,
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
@@ -94,9 +96,28 @@ module emu
 	output        SDRAM_nCS,
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
-	output        SDRAM_nWE
+	output        SDRAM_nWE,
+
+	input         UART_CTS,
+	output        UART_RTS,
+	input         UART_RXD,
+	output        UART_TXD,
+	output        UART_DTR,
+	input         UART_DSR,
+
+	// Open-drain User port.
+	// 0 - D+/RX
+	// 1 - D-/TX
+	// 2..5 - USR1..USR4
+	// Set USER_OUT to 1 to read from USER_IN.
+	input   [5:0] USER_IN,
+	output  [5:0] USER_OUT,
+
+	input         OSD_STATUS
 );
 
+assign USER_OUT = '1;
+assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 
@@ -120,10 +141,10 @@ localparam CONF_STR =
 	"-;",
 	"O2,Screen Color,White,Green;",
 	"O1,Aspect Ratio,4:3,16:9;",
-	"O45,Scandoubler Fx,None,CRT 25%,CRT 50%,CRT 75%;",
+	"O46,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
-	"T6,Reset;",
-	"V,v0.70.",`BUILD_DATE
+	"R0,Reset;",
+	"V,v",`BUILD_DATE
 };
 
 ////////////////////   CLOCKS   ///////////////////
@@ -144,7 +165,7 @@ always @(posedge clk_sys) begin
 	integer   initRESET = 20000000;
 	reg [3:0] reset_cnt;
 
-	if ((!(RESET | status[0] | buttons[1] | status[6]) && reset_cnt==4'd14) && !initRESET)
+	if ((!(RESET | status[0] | buttons[1]) && reset_cnt==4'd14) && !initRESET)
 		reset <= 0;
 	else begin
 		if(initRESET) initRESET <= initRESET - 1;
@@ -313,7 +334,10 @@ always @(posedge clk_sys) begin
 	end
 end
 
-wire [1:0] scale = status[5:4];
+wire [2:0] scale = status[6:4];
+wire [2:0] sl = scale ? scale - 1'd1 : 3'd0; 
+assign VGA_SL = sl[1:0];
+assign VGA_F1 = 0;
 
 video_mixer #(.HALF_DEPTH(1)) video_mixer
 (
@@ -321,7 +345,7 @@ video_mixer #(.HALF_DEPTH(1)) video_mixer
 	.ce_pix(ce_7mp),
 	.ce_pix_out(CE_PIXEL),
 	
-	.scanlines({scale == 3, scale == 2}),
+	.scanlines(0),
 	.scandoubler(scale || forced_scandoubler),
 	.hq2x(scale==1),
 	.mono(0),
