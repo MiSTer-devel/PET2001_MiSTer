@@ -61,7 +61,7 @@ module pet2001hw
 	input            cass_read,
 	output           audio, // CB2 audio
 
-	input  [13:0]    dma_addr,
+	input  [14:0]    dma_addr, // 1 line added so to support 32KB RAM PRG Injection
 	input   [7:0]    dma_din,
 	output  [7:0]    dma_dout,
 	input            dma_we,
@@ -90,7 +90,7 @@ pet2001rom rom
 (
 	.q_a(rom_data),
 	.q_b(chardata),
-	.address_a(addr[13:0]),
+	.address_a(addr[14:0]), // 1 line added so to support future Rom over 16KB
 	.address_b({3'b101,charaddr}),
 	.clock(clk)
 );
@@ -104,7 +104,7 @@ wire [7:0] 	vram_data;
 wire [7:0] 	video_data;
 wire [10:0] video_addr;
 
-wire	ram_we  = we && (addr[15:14] == 2'b00);
+wire	ram_we  = we && (addr[15:15] == 2'b00); // 1 line added so to support 32KB RAM. PET Kernal sees now the full 32KB.
 wire	vram_we = we && (addr[15:11] == 5'b1000_0);
 
 pet2001ram ram
@@ -113,7 +113,7 @@ pet2001ram ram
 
 	.q_a(ram_data),
 	.data_a(data_in),
-	.address_a(addr[13:0]),
+	.address_a(addr[14:0]), // 1 line added so to support 32KB RAM. All RAM is synthesized now at compilation.
 	.wren_a(ram_we),
 
 	.q_b(dma_dout),
@@ -176,10 +176,12 @@ casex(addr[15:11])
 	5'b1110_0:                 // E000-E7FF
 		data_out = rom_data;
 	5'b110x_x:                 // C000-DFFF
+		data_out = rom_data;			
+	5'b1011_x:				  		// B000-BFFF 4KB ROM ADDED FOR FUTURE BASIC V4 IUPGRADE !!!
 		data_out = rom_data;
 	5'b1000_0:                 // 8000-87FF
 		data_out = vram_data;
-	5'b00xx_x:                 // 0000-3FFF
+	5'b0xxx_x:                 // 0000-7FFF DOUBLED TO ENJOY 32KB RAM !
 		data_out = ram_data;
 	default:
 		data_out = 8'h55;
