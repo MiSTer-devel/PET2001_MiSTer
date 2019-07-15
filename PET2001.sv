@@ -317,7 +317,7 @@ pet2001hw hw
 	.cass_read(tape_audio),
 	.diag_l(!status[3]),
 
-	.dma_addr(dma_off[13:0]+ioctl_addr[13:0]-2'd2),
+	.dma_addr(dma_off[14:0]+ioctl_addr[14:0]-2'd2), // 1 line added so to support 32KB RAM PRG Injection
 	.dma_din(ioctl_dout),
 	.dma_dout(),
 	.dma_we(ioctl_wr && ioctl_download && (ioctl_index == 8'h41) && (ioctl_addr>1)),

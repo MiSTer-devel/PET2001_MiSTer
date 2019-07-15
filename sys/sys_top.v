@@ -57,7 +57,7 @@ module sys_top
 	input         HDMI_TX_INT,
 
 	//////////// SDR ///////////
-	output [12:0] SDRAM_A,
+	output [12:0] SDRAM_A, // Does not impact system 16/32KB Ram
 	inout  [15:0] SDRAM_DQ,
 	output        SDRAM_DQML,
 	output        SDRAM_DQMH,
