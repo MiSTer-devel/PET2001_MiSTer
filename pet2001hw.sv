@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 ///////////////////////////////////////////////////////////////////////////////
 //
-// Engineer:         Thomas Skibo
+// Initial Engineer (2001 Model):          Thomas Skibo
+// Brought to 3032 and 4032 (non CRTC):    Ruben Aparicio
 // 
 // Create Date:      Sep 23, 2011
 //
@@ -13,6 +14,7 @@
 //////////////////////////////////////////////////////////////////////////////
 //
 // Copyright (C) 2011, Thomas Skibo.  All rights reserved.
+// Copyright (C) 2019, Ruben Aparicio.  All rights reserved.
 // 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -90,8 +92,8 @@ pet2001rom rom
 (
 	.q_a(rom_data),
 	.q_b(chardata),
-	.address_a(addr[14:0]), // 1 line added so to support future Rom over 16KB
-	.address_b({3'b101,charaddr}),
+	.address_a(addr[14:0]), // 1 line added so to support Rom space over 16KB
+	.address_b({5'b1110_1,charaddr}), 
 	.clock(clk)
 );
 
@@ -171,15 +173,19 @@ always @(*)
 casex(addr[15:11])
 	5'b1111_x:                 // F000-FFFF
 		data_out = rom_data;
-	5'b1110_1:                 // E800-EFFF
+	5'b1110_1:                 // E800-EFFF. Beware, In the current model, system loads chargen from this block.
 		data_out = io_read_data;
 	5'b1110_0:                 // E000-E7FF
 		data_out = rom_data;
 	5'b110x_x:                 // C000-DFFF
 		data_out = rom_data;			
-	5'b1011_x:				  		// B000-BFFF 4KB ROM ADDED FOR FUTURE BASIC V4 IUPGRADE !!!
+	5'b1011_x:				  		// B000-BFFF BASIC V4 READY
 		data_out = rom_data;
-	5'b1000_0:                 // 8000-87FF
+	5'b1010x:				  		// 4k  A000-AFFF OPT ROM 2 READY	
+		data_out = rom_data;
+	5'b1001x:				  		// 4k  9000-9FFF OPT ROM 1 READY
+		data_out = rom_data;
+	5'b1000_0:                 // 8000-87FF VIDEO RAM
 		data_out = vram_data;
 	5'b0xxx_x:                 // 0000-7FFF DOUBLED TO ENJOY 32KB RAM !
 		data_out = ram_data;
