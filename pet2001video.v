@@ -39,10 +39,12 @@ always @(posedge clk) begin
 	end
 
 	if(ce_7mn) begin
-		if(hc == 358) HSync <= 1;
+		if(hc == 358) begin
+			HSync <= 1;
+			if(vc == 225) VSync <= 1;
+			if(vc == 234) VSync <= 0;
+		end
 		if(hc == 391) HSync <= 0;
-		if(vc == 225) VSync <= 1;
-		if(vc == 234) VSync <= 0;
 	end
 end
 
