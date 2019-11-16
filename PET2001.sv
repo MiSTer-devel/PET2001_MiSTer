@@ -3,6 +3,7 @@
 //
 //  Port to MiSTer
 //  Copyright (C) 2017-2019 Sorgelig
+//	Extension to Basic v4, 32KB RAM and Loader fix by raparici
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -300,6 +301,7 @@ cpu6502 cpu
 	.we(we)
 );
 
+
 ///////////////////////////////////////////////////
 // Commodore Pet hardware
 ///////////////////////////////////////////////////
@@ -326,20 +328,65 @@ pet2001hw hw
 	.cass_read(tape_audio),
 	.diag_l(!status[3]),
 
-	.dma_addr(dma_off[14:0]+ioctl_addr[14:0]-2'd2), // 1 line added so to support 32KB RAM PRG Injection
-	.dma_din(ioctl_dout),
+	.dma_addr(dl_addr),
+	.dma_din(dl_data),
 	.dma_dout(),
-	.dma_we(ioctl_wr && ioctl_download && (ioctl_index == 8'h41) && (ioctl_addr>1)),
+	.dma_we(dl_wr),
 
 	.clk_speed(0),
 	.clk_stop(0)
 );
 
-reg [15:0] dma_off;
+
+////////////////////////////////////////////////////////////////////
+// Loading
+////////////////////////////////////////////////////////////////////
+
+reg  [15:0] dl_addr;
+reg   [7:0] dl_data;
+reg         dl_wr;
+
 always @(posedge clk_sys) begin
-	if(ioctl_wr && ioctl_download && (ioctl_index == 8'h41)) begin
-		if(ioctl_addr == 0) dma_off[7:0]  <= ioctl_dout;
-		if(ioctl_addr == 1) dma_off[15:8] <= ioctl_dout;
+	reg        old_download = 0;
+	reg  [3:0] state = 0;
+	reg [15:0] addr;
+
+	dl_wr <= 0;
+	old_download <= ioctl_download;
+
+	if(ioctl_download && (ioctl_index == 8'h41)) begin
+		state <= 0;
+		if(ioctl_wr) begin  
+			     if(ioctl_addr == 0) addr[7:0]  <= ioctl_dout;
+			else if(ioctl_addr == 1) addr[15:8] <= ioctl_dout;
+			else begin
+				if(addr<'h8000) begin
+					dl_addr <= addr;
+					dl_data <= ioctl_dout;
+					dl_wr   <= 1;
+					addr    <= addr + 1'd1;
+				end
+			end
+		end
+	end
+
+	if(old_download && ~ioctl_download && (ioctl_index == 8'h41)) state <= 1;
+	if(state) state <= state + 1'd1;
+
+	case(state)
+		 1: begin dl_addr <= 16'h2a; dl_data <= addr[7:0];  dl_wr <= 1; end
+		 3: begin dl_addr <= 16'h2b; dl_data <= addr[15:8]; dl_wr <= 1; end
+	endcase
+	
+	if(ioctl_download && !ioctl_index) begin
+		state <= 0;
+		if(ioctl_wr) begin
+			if(ioctl_addr>='h0400 && ioctl_addr<'h8000) begin
+				dl_addr <= ioctl_addr[15:0] + 16'h8000;
+				dl_data <= ioctl_dout;
+				dl_wr   <= 1;
+			end
+		end
 	end
 end
 
@@ -347,6 +394,11 @@ wire [2:0] scale = status[6:4];
 wire [2:0] sl = scale ? scale - 1'd1 : 3'd0; 
 assign VGA_SL = sl[1:0];
 assign VGA_F1 = 0;
+
+
+////////////////////////////////////////////////////////////////////
+// Video
+////////////////////////////////////////////////////////////////////	
 
 video_mixer #(.HALF_DEPTH(1)) video_mixer
 (
@@ -366,7 +418,7 @@ video_mixer #(.HALF_DEPTH(1)) video_mixer
 
  
 ////////////////////////////////////////////////////////////////////
-// Audio 																			//
+// Audio
 ////////////////////////////////////////////////////////////////////		
 
 wire [1:0] audio = {audioDat ^ tape_write, tape_audio & tape_active & (status[8:7] == 2)};
@@ -388,6 +440,7 @@ tape tape(.*, .clk(clk_sys), .ioctl_download(ioctl_download && (ioctl_index==1))
 reg [18:0] act_cnt;
 wire       tape_led = act_cnt[18] ? act_cnt[17:10] <= act_cnt[7:0] : act_cnt[17:10] > act_cnt[7:0];
 always @(posedge clk_sys) if((|status[8:7] ? ce_1m : ce_7mp) && (tape_active || act_cnt[18] || act_cnt[17:0])) act_cnt <= act_cnt + 1'd1; 
+
 
 //////////////////////////////////////////////////////////////////////
 // PS/2 to PET keyboard interface
