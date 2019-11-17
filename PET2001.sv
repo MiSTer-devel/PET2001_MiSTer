@@ -172,7 +172,7 @@ pll pll
 
 reg reset = 1;
 always @(posedge clk_sys) begin
-	integer   initRESET = 20000000;
+	integer   initRESET = 10000000;
 	reg [3:0] reset_cnt;
 
 	if ((!(RESET | status[0] | buttons[1]) && reset_cnt==4'd14) && !initRESET)
@@ -187,16 +187,16 @@ end
 reg  ce_7mp;
 reg  ce_7mn;
 reg  ce_1m;
-wire [6:0] cpu_rates[4] = '{111, 55, 27, 13};
+wire [6:0] cpu_rates[4] = '{55, 27, 13, 6};
 
-always @(negedge clk_sys) begin
-	reg  [4:0] div = 0;
+always @(posedge clk_sys) begin
+	reg  [2:0] div = 0;
 	reg  [6:0] cpu_div = 0;
-	reg  [6:0] cpu_rate = 111;
+	reg  [6:0] cpu_rate = 55;
 
 	div <= div + 1'd1;
-	ce_7mp  <= !div[3] & !div[2:0];
-	ce_7mn  <=  div[3] & !div[2:0];
+	ce_7mp  <= !div[2] & !div[1:0];
+	ce_7mn  <=  div[2] & !div[1:0];
 	
 	cpu_div <= cpu_div + 1'd1;
 	if(cpu_div == cpu_rate) begin
