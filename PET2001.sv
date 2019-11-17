@@ -403,6 +403,7 @@ assign VGA_F1 = 0;
 video_mixer #(.HALF_DEPTH(1)) video_mixer
 (
 	.*,
+	.clk_vid(clk_sys),
 	.ce_pix(ce_7mp),
 	.ce_pix_out(CE_PIXEL),
 	
@@ -410,6 +411,7 @@ video_mixer #(.HALF_DEPTH(1)) video_mixer
 	.scandoubler(scale || forced_scandoubler),
 	.hq2x(scale==1),
 	.mono(0),
+	.gamma_bus(),
 
 	.R({4{~status[2] & pix}}),
 	.G({4{pix}}),
