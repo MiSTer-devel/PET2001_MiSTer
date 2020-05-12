@@ -282,23 +282,28 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 ///////////////////////////////////////////////////
 
 wire [15:0] addr;
-wire [7:0] 	cpu_data_out;
-wire [7:0] 	cpu_data_in;
+wire  [7:0] cpu_data_out;
+wire  [7:0] cpu_data_in;
+wire        rnw;
 
-wire we;
+wire we = ~rnw;
 wire irq;
 
-cpu6502 cpu
+T65 cpu
 (
-	.clk(clk_sys),
-	.ce(ce_1m),
-	.reset(reset),
-	.nmi(0),
-	.irq(irq),
-	.din(cpu_data_in),
-	.dout(cpu_data_out),
-	.addr(addr),
-	.we(we)
+    .Mode(0),
+    .Res_n(~reset),
+    .Enable(ce_1m),
+    .Clk(clk_sys),
+    .Rdy(1),
+    .Abort_n(1),
+    .IRQ_n(~irq),
+    .NMI_n(1),
+    .SO_n(1),
+    .R_W_n(rnw),
+    .A(addr),
+    .DI(cpu_data_in),
+    .DO(cpu_data_out)
 );
 
 
