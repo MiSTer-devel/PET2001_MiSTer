@@ -30,7 +30,7 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-	inout  [45:0] HPS_BUS,
+	inout  [48:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
 	output        CLK_VIDEO,
@@ -56,8 +56,9 @@ module emu
 
 	input  [11:0] HDMI_WIDTH,
 	input  [11:0] HDMI_HEIGHT,
+	output        HDMI_FREEZE,
 
-`ifdef USE_FB
+`ifdef MISTER_FB
 	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
 	// FB_FORMAT:
 	//    [2:0] : 011=8bpp(palette) 100=16bpp 101=24bpp 110=32bpp
@@ -75,6 +76,7 @@ module emu
 	input         FB_LL,
 	output        FB_FORCE_BLANK,
 
+`ifdef MISTER_FB_PALETTE
 	// Palette control for 8bit modes.
 	// Ignored for other video modes.
 	output        FB_PAL_CLK,
@@ -82,6 +84,7 @@ module emu
 	output [23:0] FB_PAL_DOUT,
 	input  [23:0] FB_PAL_DIN,
 	output        FB_PAL_WR,
+`endif
 `endif
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
@@ -113,7 +116,6 @@ module emu
 	output        SD_CS,
 	input         SD_CD,
 
-`ifdef USE_DDRAM
 	//High latency DDR3 RAM interface
 	//Use for non-critical time purposes
 	output        DDRAM_CLK,
@@ -126,9 +128,7 @@ module emu
 	output [63:0] DDRAM_DIN,
 	output  [7:0] DDRAM_BE,
 	output        DDRAM_WE,
-`endif
 
-`ifdef USE_SDRAM
 	//SDRAM interface with lower latency
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -141,10 +141,10 @@ module emu
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
 	output        SDRAM_nWE,
-`endif
 
-`ifdef DUAL_SDRAM
+`ifdef MISTER_DUAL_SDRAM
 	//Secondary SDRAM
+	//Set all output SDRAM_* signals to Z ASAP if SDRAM2_EN is 0
 	input         SDRAM2_EN,
 	output        SDRAM2_CLK,
 	output [12:0] SDRAM2_A,
@@ -185,6 +185,7 @@ assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = 0;
 assign VGA_SCALER= 0;
+assign HDMI_FREEZE = 0;
 
 wire [1:0] ar = status[12:11];
 video_freak video_freak
@@ -317,12 +318,10 @@ reg         ioctl_wait = 0;
 wire [10:0] ps2_key;
 wire        forced_scandoubler;
 
-hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
+hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
-
-	.conf_str(CONF_STR),
 
 	.buttons(buttons),
 	.status(status),
@@ -475,6 +474,7 @@ video_mixer #(.HALF_DEPTH(1)) video_mixer
 	.scandoubler(scale || forced_scandoubler),
 	.hq2x(scale==1),
 	.gamma_bus(),
+	.freeze_sync(),
 
 	.R({4{~status[2] & pix}}),
 	.G({4{pix}}),
