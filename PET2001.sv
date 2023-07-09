@@ -207,7 +207,7 @@ localparam CONF_STR =
 {
 	"PET2001;;",
 	"-;",
-	"F,TAPPRG;",
+	"F1,TAPPRG;",
 	"O78,TAP mode,Fast,Normal,Normal+Sound;",
 	"-;",
 	"O9A,CPU Speed,Normal,x2,x4,x8;",
@@ -217,6 +217,8 @@ localparam CONF_STR =
 	"OBC,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O46,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"ODE,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"-;",
+	"FC2,ROM,Load System ROM;",
 	"-;",
 	"R0,Reset;",
 	"V,v",`BUILD_DATE
@@ -240,7 +242,7 @@ always @(posedge clk_sys) begin
 	integer   initRESET = 10000000;
 	reg [3:0] reset_cnt;
 
-	if ((!(RESET | status[0] | buttons[1]) && reset_cnt==4'd14) && !initRESET)
+	if ((!(RESET || status[0] || buttons[1] || (ioctl_download && ioctl_index==2)) && reset_cnt==4'd14) && !initRESET)
 		reset <= 0;
 	else begin
 		if(initRESET) initRESET <= initRESET - 1;
@@ -395,7 +397,7 @@ pet2001hw hw
 	.cass_sense_n(0),
 	.cass_read(tape_audio),
 	.diag_l(!status[3]),
-
+	
 	.dma_addr(dl_addr),
 	.dma_din(dl_data),
 	.dma_dout(),
@@ -446,11 +448,11 @@ always @(posedge clk_sys) begin
 		 3: begin dl_addr <= 16'h2b; dl_data <= addr[15:8]; dl_wr <= 1; end
 	endcase
 	
-	if(ioctl_download && !ioctl_index) begin
+	if(ioctl_download && ioctl_index==2) begin
 		state <= 0;
 		if(ioctl_wr) begin
-			if(ioctl_addr>='h0400 && ioctl_addr<'h8000) begin
-				dl_addr <= ioctl_addr[15:0] + 16'h8000;
+			if(ioctl_addr<'h8000) begin
+				dl_addr <= {1'b1,ioctl_addr[14:0]};
 				dl_data <= ioctl_dout;
 				dl_wr   <= 1;
 			end

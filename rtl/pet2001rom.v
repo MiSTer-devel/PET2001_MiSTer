@@ -41,12 +41,16 @@ module pet2001rom (
 	address_a,
 	address_b,
 	clock,
+	wren_a,
+	data_a,
 	q_a,
 	q_b);
 
 	input	[14:0]  address_a;
 	input	[14:0]  address_b;
 	input	  clock;
+	input   wren_a;
+	input	   [7:0]  data_a;
 	output	[7:0]  q_a;
 	output	[7:0]  q_b;
 `ifndef ALTERA_RESERVED_QIS
@@ -68,9 +72,9 @@ module pet2001rom (
 				.address_a (address_a),
 				.address_b (address_b),
 				.clock0 (clock),
-				.data_a (sub_wire0),
+				.data_a (data_a),
 				.data_b (sub_wire0),
-				.wren_a (sub_wire1),
+				.wren_a (wren_a),
 				.wren_b (sub_wire1),
 				.q_a (sub_wire2),
 				.q_b (sub_wire3)

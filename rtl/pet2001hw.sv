@@ -63,11 +63,11 @@ module pet2001hw
 	input            cass_read,
 	output           audio, // CB2 audio
 
-	input  [14:0]    dma_addr, // 1 line added so to support 32KB RAM PRG Injection
+	input  [15:0]    dma_addr, // 1 line added so to support 32KB RAM PRG Injection
 	input   [7:0]    dma_din,
 	output  [7:0]    dma_dout,
 	input            dma_we,
-
+	
 	input            clk_speed,
 	input            clk_stop,
 	input            diag_l,
@@ -88,11 +88,15 @@ wire [7:0]	rom_data;
 wire [10:0] charaddr;
 wire [7:0] 	chardata;
 
+wire rom_wr = dma_we & dma_addr[15];
+
 pet2001rom rom
 (
 	.q_a(rom_data),
 	.q_b(chardata),
-	.address_a(addr[14:0]), // 1 line added so to support Rom space over 16KB
+	.data_a(dma_din),
+	.wren_a(rom_wr),
+	.address_a(rom_wr ? dma_addr[14:0] : addr[14:0]), // 1 line added so to support Rom space over 16KB
 	.address_b({5'b1110_1,charaddr}), 
 	.clock(clk)
 );
@@ -120,8 +124,8 @@ pet2001ram ram
 
 	.q_b(dma_dout),
 	.data_b(dma_din),
-	.address_b(dma_addr),
-	.wren_b(dma_we)
+	.address_b(dma_addr[14:0]),
+	.wren_b(dma_we & ~dma_addr[15])
 );
 
 pet2001vram vidram
