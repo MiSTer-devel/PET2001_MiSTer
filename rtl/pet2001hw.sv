@@ -132,7 +132,7 @@ pet2001vram vidram
 (
 	.clock(clk),
 
-	.address_a(addr[10:0]),
+	.address_a({1'b0,addr[9:0]}),
 	.data_a(data_in),
 	.wren_a(vram_we),
 	.q_a(vram_data),
