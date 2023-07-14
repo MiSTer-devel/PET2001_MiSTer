@@ -110,16 +110,16 @@ wire [7:0] 	vram_data;
 wire [7:0] 	video_data;
 wire [10:0] video_addr;
 
-wire	ram_we  = we && (addr[15:15] == 2'b00); // 1 line added so to support 32KB RAM. PET Kernal sees now the full 32KB.
-wire	vram_we = we && (addr[15:11] == 5'b1000_0);
+wire	ram_we  = we && ~addr[15];
 
+//32KB RAM
 pet2001ram ram
 (
 	.clock(clk),
 
 	.q_a(ram_data),
 	.data_a(data_in),
-	.address_a(addr[14:0]), // 1 line added so to support 32KB RAM. All RAM is synthesized now at compilation.
+	.address_a(addr[14:0]),
 	.wren_a(ram_we),
 
 	.q_b(dma_dout),
@@ -127,6 +127,8 @@ pet2001ram ram
 	.address_b(dma_addr[14:0]),
 	.wren_b(dma_we & ~dma_addr[15])
 );
+
+wire	vram_we = we && (addr[15:12] == 5'b1000);
 
 pet2001vram vidram
 (
@@ -150,14 +152,14 @@ wire	video_on;    // signal indicating VGA is scanning visible
 				       // rows.  Used to generate tick interrupts.
 wire 	video_blank; // blank screen during scrolling
 wire	video_gfx;	 // display graphic characters vs. lower-case
- 
+
 pet2001video vid(.*);
  
 ////////////////////////////////////////////////////////
 // I/O hardware
 ////////////////////////////////////////////////////////
 wire [7:0] 	io_read_data;
-wire 	io_we = we && (addr[15:11] == 5'b1110_1);
+wire        io_sel = addr[15:8] == 8'hE8;
 
 pet2001io io
 (
@@ -166,7 +168,7 @@ pet2001io io
 	.data_out(io_read_data),
 	.data_in(data_in),
 	.addr(addr[10:0]),
-	.we(io_we),
+	.cs(io_sel),
 	.video_sync(video_on)
 );
 
@@ -175,26 +177,16 @@ pet2001io io
 /////////////////////////////////////
 always @(*)
 casex(addr[15:11])
-	5'b1111_x:                 // F000-FFFF
-		data_out = rom_data;
-	5'b1110_1:                 // E800-EFFF. Beware, In the current model, system loads chargen from this block.
-		data_out = io_read_data;
-	5'b1110_0:                 // E000-E7FF
-		data_out = rom_data;
-	5'b110x_x:                 // C000-DFFF
-		data_out = rom_data;			
-	5'b1011_x:				  		// B000-BFFF BASIC V4 READY
-		data_out = rom_data;
-	5'b1010x:				  		// 4k  A000-AFFF OPT ROM 2 READY	
-		data_out = rom_data;
-	5'b1001x:				  		// 4k  9000-9FFF OPT ROM 1 READY
-		data_out = rom_data;
-	5'b1000_0:                 // 8000-87FF VIDEO RAM
-		data_out = vram_data;
-	5'b0xxx_x:                 // 0000-7FFF DOUBLED TO ENJOY 32KB RAM !
-		data_out = ram_data;
-	default:
-		data_out = 8'h55;
+	5'b1111_x: data_out = rom_data;     // F000-FFFF
+	5'b1110_1: data_out = io_read_data; // E800-EFFF I/O (ROM contains chargen here, not accessible by CPU)
+	5'b1110_0: data_out = rom_data;     // E000-E7FF
+	5'b110x_x: data_out = rom_data;     // C000-DFFF
+	5'b1011_x: data_out = rom_data;		// B000-BFFF BASIC
+	5'b1010_x: data_out = rom_data;		// A000-AFFF OPT ROM 2
+	5'b1001_x: data_out = rom_data;		// 9000-9FFF OPT ROM 1
+	5'b1000_x: data_out = vram_data;    // 8000-8FFF VIDEO RAM (mirrored several times)
+	5'b0xxx_x: data_out = ram_data;     // 0000-7FFF 32KB RAM
+	default:   data_out = 8'h55;
 endcase
 
 endmodule // pet2001hw

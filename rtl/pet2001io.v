@@ -50,7 +50,8 @@ module pet2001io
 (
 	output reg [7:0] data_out, 	// CPU interface
 	input  [7:0] data_in,
-	input [10:0] addr,
+	input  [7:0] addr,
+	input        cs,
 	input        we,
 
 	output       irq,
@@ -79,9 +80,12 @@ module pet2001io
 reg strobe_io;
 always @(negedge clk) strobe_io <= ce;
 
+wire pia1_sel = cs & addr[4];
+wire pia2_sel = cs & addr[5];
+wire via_sel  = cs & addr[6];
+
 /////////////////////////// 6520 PIA1 ////////////////////////////////////
 //
-wire       pia1_strobe = strobe_io && (addr[10:2] == 9'b000_0001_00);
 wire [7:0] pia1_data_out;
 wire       pia1_irq;
 wire [7:0] pia1_porta_out;
@@ -94,7 +98,7 @@ pia6520 pia1
 	.data_out(pia1_data_out),
 	.data_in(data_in),
 	.addr(addr[1:0]),
-	.strobe(pia1_strobe),
+	.strobe(strobe_io & pia1_sel),
 	.we(we),
 
 	.irq(pia1_irq),
@@ -121,7 +125,6 @@ assign keyrow = pia1_porta_out[3:0];
  
 ////////////////////////// 6520 PIA2 ////////////////////////////////////
 // (does nothing for now)
-wire       pia2_strobe = strobe_io && (addr[10:2] == 9'b000_0010_00);
 wire [7:0] pia2_data_out;
 wire       pia2_irq;
 
@@ -130,7 +133,7 @@ pia6520 pia2
 	.data_out(pia2_data_out),
 	.data_in(data_in),
 	.addr(addr[1:0]),
-	.strobe(pia2_strobe),
+	.strobe(strobe_io & pia2_sel),
 	.we(we),
 
 	.irq(pia2_irq),
@@ -154,7 +157,6 @@ pia6520 pia2
 
 /////////////////////////// 6522 VIA ////////////////////////////////////
 //
-wire	     via_strobe = strobe_io && (addr[10:4] == 7'b000_0100);
 wire [7:0] via_data_out;
 wire       via_irq;
 wire [7:0] via_portb_out;
@@ -165,7 +167,7 @@ via6522 via
 	.data_out(via_data_out),
 	.data_in(data_in),
 	.addr(addr[3:0]),
-	.strobe(via_strobe),
+	.strobe(strobe_io & via_sel),
 	.we(we),
 
 	.irq(via_irq),
@@ -195,13 +197,12 @@ assign cass_write = via_portb_out[3];
 /////////////// Read data mux /////////////////////////
 // register I/O stuff, therefore RDY must be delayed a cycle!
 //
-always @(posedge clk)
-casex (addr[10:2])
-			9'b000_0001_00:	data_out <= pia1_data_out;
-			9'b000_0010_00:	data_out <= pia2_data_out;
-			9'b000_0100_xx:	data_out <= via_data_out;
-			default: 		data_out <= 8'hXX;
-endcase
+always @(posedge clk) begin
+	data_out <= 8'hFF
+					& (pia1_sel ? pia1_data_out : 8'hFF)
+					& (pia2_sel ? pia2_data_out : 8'hFF)
+					& (via_sel  ? via_data_out  : 8'hFF);
+end
  
 assign irq = pia1_irq || pia2_irq || via_irq;
 
