@@ -90,7 +90,7 @@ wire [7:0] 	chardata;
 
 wire rom_wr = dma_we & dma_addr[15];
 
-pet2001rom rom
+dpram #(.addr_width(15), .mem_init_file("./roms/PET2001-BASIC4.mif")) pet2001rom
 (
 	.q_a(rom_data),
 	.q_b(chardata),
@@ -100,7 +100,6 @@ pet2001rom rom
 	.address_b({5'b1110_1,charaddr}), 
 	.clock(clk)
 );
-
 	
 //////////////////////////////////////////////////////////////
 // Pet RAM and video RAM.  Video RAM is dual ported.
@@ -113,7 +112,7 @@ wire [10:0] video_addr;
 wire	ram_we  = we && ~addr[15];
 
 //32KB RAM
-pet2001ram ram
+dpram #(.addr_width(15)) pet2001ram
 (
 	.clock(clk),
 
@@ -128,20 +127,18 @@ pet2001ram ram
 	.wren_b(dma_we & ~dma_addr[15])
 );
 
-wire	vram_we = we && (addr[15:12] == 5'b1000);
+wire	vram_we = we && (addr[15:12] == 4'h8);
 
-pet2001vram vidram
+dpram #(.addr_width(10)) pet2001vram
 (
 	.clock(clk),
 
-	.address_a({1'b0,addr[9:0]}),
+	.address_a(addr[9:0]),
 	.data_a(data_in),
 	.wren_a(vram_we),
 	.q_a(vram_data),
 
 	.address_b(video_addr),
-	.data_b(0),
-	.wren_b(0),
 	.q_b(video_data)
 );
 
