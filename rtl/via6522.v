@@ -74,7 +74,7 @@ module via6522
 );
 
 // Register address offsets
-parameter [3:0]
+localparam [3:0]
 	ADDR_PORTB     = 4'h0,
 	ADDR_PORTA     = 4'h1,
 	ADDR_DDRB      = 4'h2,
@@ -175,12 +175,12 @@ end
 wire	ca1_act_trans = ((ca1_in && !ca1_in_1 && pcr[0]) ||
                       (!ca1_in && ca1_in_1 && !pcr[0]));
 wire 	ca2_act_trans = ((ca2_in && !ca2_in_1 && pcr[2]) ||
-                      (!ca2_in && ca2_in_1 && !pcr[2]));
+                      (!ca2_in && ca2_in_1 && !pcr[2])) && !pcr[3];
 
  // logic for clearing CA1 and CA2 interrupt bits.
 wire 	irq_ca1_clr = ((strobe && addr == ADDR_PORTA) ||
                     (wr_strobe && addr == ADDR_IFR && data_in[1]));
-wire 	irq_ca2_clr = ((strobe && addr == ADDR_PORTA) ||
+wire  irq_ca2_clr = ((strobe && addr == ADDR_PORTA && !pcr[1]) ||
                     (wr_strobe && addr == ADDR_IFR && data_in[0]));
 
 always @(posedge clk) begin
@@ -211,12 +211,12 @@ end
 wire cb1_act_trans = ((cb1_in && !cb1_in_1 && pcr[4]) ||
                      (!cb1_in && cb1_in_1 && !pcr[4]));
 wire cb2_act_trans = ((cb2_in && !cb2_in_1 && pcr[6]) ||
-                     (!cb2_in && cb2_in_1 && !pcr[6]));
+                     (!cb2_in && cb2_in_1 && !pcr[6])) && !pcr[7];
 
 // logic for clearing CB1 and CB2 interrupt bits.
 wire irq_cb1_clr = ((strobe && addr == ADDR_PORTB) ||
                     (wr_strobe && addr == ADDR_IFR && data_in[4]));
-wire irq_cb2_clr = ((strobe && addr == ADDR_PORTB) ||
+wire irq_cb2_clr = ((strobe && addr == ADDR_PORTB && !pcr[5]) ||
                     (wr_strobe && addr == ADDR_IFR && data_in[3]));
  
 always @(posedge clk) begin
@@ -235,8 +235,8 @@ always @(posedge clk) begin
 	case (pcr[3:1])
 		3'b100:  ca2_out <= irq_ca1;
 		3'b101:  ca2_out <= !ca1_act_trans;
-		3'b111:  ca2_out <= 1'b1;
-		default: ca2_out <= 1'b0;
+		3'b110:  ca2_out <= 1'b0;
+		default: ca2_out <= 1'b1;
 	endcase
 end
 
@@ -255,8 +255,8 @@ always @(posedge clk) begin
 		case (pcr[7:5])
 			3'b100:  cb2_out <= cb2_out_r;
 			3'b101:  cb2_out <= !portb_wr_strobe;
-			3'b111:  cb2_out <= 1'b1;
-			default: cb2_out <= 1'b0;
+			3'b110:  cb2_out <= 1'b0;
+			default: cb2_out <= 1'b1;
 		endcase
 	end
 end
@@ -279,9 +279,12 @@ end
 reg [15:0] timer1;
 reg [7:0]  timer1_latch_lo;
 reg [7:0]  timer1_latch_hi;
+reg        timer1_undf;
  
 reg [15:0] timer2;
 reg [7:0]  timer2_latch_lo;
+reg        timer2l_reload;
+reg        timer2_undf;
 
 reg        irq_t1_one_shot;
 reg        irq_t1;
@@ -290,10 +293,22 @@ reg        irq_t2;
 
 // TIMER1
 always @(posedge clk) begin
-	if (reset) timer1 <= 16'hffff;
-	else if (wr_strobe && addr == ADDR_TIMER1_HI) timer1 <= {data_in, timer1_latch_lo};
-	else if (timer1 == 16'h0000 && ce && acr[6]) timer1 <= {timer1_latch_hi, timer1_latch_lo};
-	else if (ce) timer1 <= timer1 - 1'b1;
+	if (reset) begin
+	    timer1 <= 16'hffff;
+	    timer1_undf <= 0;
+	end
+	else if (wr_strobe && addr == ADDR_TIMER1_HI) begin
+	    timer1 <= {data_in, timer1_latch_lo};
+	    timer1_undf <= 0;
+	end
+	else if (timer1_undf && ce) begin
+	    timer1 <= {timer1_latch_hi, timer1_latch_lo};
+	    timer1_undf <= 0;
+	end
+	else if (ce) begin
+	    if (timer1 == 16'h0000) timer1_undf <= 1;
+	    timer1 <= timer1 - 1'b1;
+	end
 end
 
 // T1 latch lo
@@ -312,11 +327,11 @@ end
 always @(posedge clk) begin
 	if (reset) irq_t1_one_shot <= 1'b0;
 	else if (wr_strobe && addr == ADDR_TIMER1_HI) irq_t1_one_shot <= 1'b1;
-	else if (timer1 == 16'h0000 && ce) irq_t1_one_shot <= 1'b0;
+	else if (timer1_undf && ce && !acr[6]) irq_t1_one_shot <= 1'b0;
 end
 
 // T1 interrupt set and clear logic
-wire irq_t1_set = (timer1 == 16'h0000 && ce && (irq_t1_one_shot || acr[6]));
+wire irq_t1_set = (timer1_undf && ce && (irq_t1_one_shot || acr[6]));
 wire irq_t1_clr = ((wr_strobe && addr == ADDR_TIMER1_HI) ||
                    (wr_strobe && addr == ADDR_TIMER1_LATCH_HI) ||
                    (rd_strobe && addr == ADDR_TIMER1_LO) ||
@@ -328,18 +343,41 @@ always @(posedge clk) begin
 	else if (irq_t1_set) irq_t1 <= 1'b1;
 end
 
-// I forget what this is for
+// Generate PB7 for T1 output modes (acr[7]=1)
 always @(posedge clk) begin
 	if (reset) pb7_nxt <= 1'b1;
 	else if (wr_strobe && addr == ADDR_TIMER1_HI) pb7_nxt <= 1'b0;
-	else if (timer1 == 16'h0001 && ce) pb7_nxt <= !pb7_nxt;
+	else if (timer1_undf && ce) pb7_nxt <= !pb7_nxt;
+end
+
+// Find portb[6] transitions.
+reg         pb6_in;
+wire        pb6_trans = !portb_in[6] && pb6_in;
+always @(posedge clk) begin
+	if (ce) pb6_in <= portb_in[6];
 end
 
 // TIMER2
 always @(posedge clk) begin
-	if (reset) timer2 <= 16'hffff;
-	else if (wr_strobe && addr == ADDR_TIMER2_HI) timer2 <= {data_in, timer2_latch_lo};
-	else if ((!acr[5] || !portb_in[6]) && ce) timer2 <= timer2 - 1'b1;
+	if (reset) begin
+	    timer2 <= 16'hffff;
+	    timer2_undf <= 0;
+	    timer2l_reload <= 0;
+	end
+	else if (wr_strobe && addr == ADDR_TIMER2_HI) begin
+	    timer2 <= {data_in, timer2_latch_lo};
+	    timer2_undf <= 0;
+	end
+	else if (timer2l_reload && ce) begin
+	    timer2[7:0] <= timer2_latch_lo;
+	    timer2l_reload <= 0;
+	end
+	else if ((!acr[5] || pb6_trans) && ce) begin
+	    // Reload T2L on next cycle?
+	    if (timer2[7:0] == 8'h00 && (acr[4] || acr[2])) timer2l_reload <= 1;
+	    timer2_undf <= timer2 == 16'h0000;
+	    timer2 <= timer2 - 1'b1;
+	end
 end
 
 // T2 latch lo (i.e. writes to T2L)
@@ -352,11 +390,11 @@ end
 always @(posedge clk) begin
 	if (reset) irq_t2_one_shot <= 1'b0;
 	else if (wr_strobe && addr == ADDR_TIMER2_HI) irq_t2_one_shot <= 1'b1;
-	else if (timer2 == 16'h0000 && ce) irq_t2_one_shot <= 1'b0;
+	else if (timer2_undf && ce) irq_t2_one_shot <= 1'b0;
 end
 
 // T2 IRQ set and clear logic
-wire irq_t2_set = (timer2 == 16'h0000 && ce && irq_t2_one_shot);
+wire irq_t2_set = (timer2_undf && ce && irq_t2_one_shot);
 wire irq_t2_clr = ((wr_strobe && addr == ADDR_TIMER2_HI) ||
                    (rd_strobe && addr == ADDR_TIMER2_LO) ||
                    (wr_strobe && addr == ADDR_IFR && data_in[5]));
@@ -372,38 +410,25 @@ end
 // SR - shift register
 reg [7:0] sr;
 reg [2:0] sr_cntr;
-reg [7:0] sr_clk_div_ctr;
-reg       sr_clk_div;
-reg       irq_sr;
 reg       sr_go;
+reg       irq_sr;
 reg       do_shift;
 
 always @(posedge clk) begin
 	if (reset) sr <= 8'h00;
 	else if (wr_strobe && addr == ADDR_SR) sr <= data_in;
-	else if (do_shift) sr <= { sr[6:0], (acr[4] ? sr[7] : cb2_in) };
+	else if (do_shift && cb1_out) sr <= {sr[6:0], (acr[4] ? sr[7] : cb2_in)};
 end
 
-assign cb2_sr_out = sr[7];
-
-always @(posedge clk) begin
-	if (reset) sr_clk_div_ctr <= 8'd0;
-	else if (ce && sr_clk_div_ctr == 8'd0) sr_clk_div_ctr <= timer2_latch_lo;
-	else if (ce) sr_clk_div_ctr <= sr_clk_div_ctr - 1'b1;
-end
-
-always @(posedge clk) begin
-	if (reset) sr_clk_div <= 1'b0;
-	else sr_clk_div <= (ce && sr_clk_div_ctr == 8'd0);
-end
+assign cb2_sr_out = sr[0];
 
 always @(posedge clk) begin
 	if (reset || (strobe && addr == ADDR_SR)) sr_cntr <= 3'd7;
-	else if (do_shift) sr_cntr <= sr_cntr - 1'b1;
+	else if (do_shift && acr[4:2] != 3'b100 && (!cb1_out || acr[3:2] == 2'b11))  sr_cntr <= sr_cntr - 1'b1;
 end
 
 // SR IRQ set and clr logic
-wire irq_sr_set = do_shift && sr_cntr == 3'b000;
+wire irq_sr_set = do_shift && sr_cntr == 3'b000 && (!cb1_out || acr[3:2] == 2'b11);
 wire irq_sr_clr = ((strobe && addr == ADDR_SR) || (wr_strobe && addr == ADDR_IFR && data_in[2]));
 
 // SR IRQ
@@ -419,22 +444,25 @@ always @(posedge clk) begin
 end
 
 // cominatorial logic for do_shift signal.
-always @(sr_clk_div or ce or cb1_act_trans or sr_go or acr) begin
-	case (acr[4:2])
+always @(*) begin
+	if (sr_go)
+	    case (acr[4:2])
 		3'b000: do_shift = 1'b0;
-		3'b100: do_shift = sr_clk_div;
-		3'b001,
-		3'b101: do_shift = (sr_go && sr_clk_div);
+		3'b001, 
+		3'b100,
+		3'b101: do_shift = ce && timer2l_reload;
 		3'b010,
-		3'b110: do_shift = (sr_go && ce);
-		3'b011,
-		3'b111: do_shift = cb1_act_trans;
-	endcase
+		3'b110: do_shift = ce;
+		3'b011: do_shift = cb1_in && !cb1_in_1;
+		3'b111: do_shift = !cb1_in && cb1_in_1;
+	    endcase
+	else
+	    do_shift = 1'b0;
 end
 
 always @(posedge clk) begin
 	if (reset) cb1_out <= 1'b1;
-	else if (do_shift) cb1_out <= !cb1_out;
+	else if (do_shift && acr[3:2] != 2'b11) cb1_out <= !cb1_out;
 end
 
 ////////////////////////////////////////////////////////
