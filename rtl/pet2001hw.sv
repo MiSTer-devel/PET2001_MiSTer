@@ -63,6 +63,9 @@ module pet2001hw
 	input            cass_read,
 	output           audio, // CB2 audio
 
+   input  st_ieee_bus ieee_i,
+   output st_ieee_bus ieee_o,
+
 	input  [15:0]    dma_addr, // 1 line added so to support 32KB RAM PRG Injection
 	input   [7:0]    dma_din,
 	output  [7:0]    dma_dout,

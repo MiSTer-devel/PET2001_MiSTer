@@ -63,6 +63,9 @@ module pet2001io
 	output       video_gfx,
 	input        video_sync,
 
+	input  st_ieee_bus ieee_i,	// IEEE interface
+	output st_ieee_bus ieee_o,
+
 	output       cass_motor_n, 	// Cassette #1 interface
 	output       cass_write,
 	input        cass_sense_n,
@@ -84,12 +87,17 @@ wire pia1_sel = cs & addr[4];
 wire pia2_sel = cs & addr[5];
 wire via_sel  = cs & addr[6];
 
+// Unconnected IEEE signals
+assign ieee_o.srq = 1'b1;
+assign ieee_o.ren = 1'b1;
+assign ieee_o.ifc = 1'b1;
+
 /////////////////////////// 6520 PIA1 ////////////////////////////////////
 //
 wire [7:0] pia1_data_out;
 wire       pia1_irq;
 wire [7:0] pia1_porta_out;
-wire [7:0] pia1_porta_in = {diag_l, 2'b00, cass_sense_n, 4'b0000};
+wire [7:0] pia1_porta_in = {diag_l, ieee_i.eoi, 1'b0, cass_sense_n, 4'b0000};
 wire       pia1_ca1_in = !cass_read;
 wire       pia1_ca2_out;
 
@@ -119,12 +127,12 @@ pia6520 pia1
 	.reset(reset)
 );
  
+assign ieee_o.eoi  = pia1_ca2_out;
 assign video_blank = !pia1_ca2_out;
-assign keyrow = pia1_porta_out[3:0];
+assign keyrow      = pia1_porta_out[3:0];
 
- 
+
 ////////////////////////// 6520 PIA2 ////////////////////////////////////
-// (does nothing for now)
 wire [7:0] pia2_data_out;
 wire       pia2_irq;
 
@@ -138,17 +146,17 @@ pia6520 pia2
 
 	.irq(pia2_irq),
 	.porta_out(),
-	.porta_in(8'h00),
-	.portb_out(),
-	.portb_in(8'h00),
+	.porta_in(ieee_i.data),
+	.portb_out(ieee_o.data),
+	.portb_in(8'hFF),
 
-	.ca1_in(1'b0),
-	.ca2_out(),
-	.ca2_in(1'b0),
+	.ca1_in(ieee_i.atn),
+	.ca2_out(ieee_o.ndac),
+	.ca2_in(1'b1),
 
-	.cb1_in(1'b0),
-	.cb2_out(),
-	.cb2_in(1'b0),
+	.cb1_in(ieee_i.srq),
+	.cb2_out(ieee_o.dav),
+	.cb2_in(1'b1),
 
 	.clk(clk),
 	.reset(reset)
@@ -160,7 +168,7 @@ pia6520 pia2
 wire [7:0] via_data_out;
 wire       via_irq;
 wire [7:0] via_portb_out;
-wire [7:0] via_portb_in = {2'b00, video_sync, 5'b0_0000};
+wire [7:0] via_portb_in = {ieee_i.dav, ieee_i.nrfd, video_sync, 4'b0000, ieee_i.ndac};
 
 via6522 via
 (
@@ -191,8 +199,9 @@ via6522 via
 	.reset(reset)
 );
 
-assign cass_write = via_portb_out[3];
-
+assign ieee_o.nrfd = via_portb_out[1];
+assign ieee_o.atn  = via_portb_out[2];
+assign cass_write  = via_portb_out[3];
 
 /////////////// Read data mux /////////////////////////
 // register I/O stuff, therefore RDY must be delayed a cycle!

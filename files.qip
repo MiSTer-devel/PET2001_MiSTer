@@ -5,7 +5,8 @@ set_global_assignment -name VHDL_FILE rtl/bram.vhd
 set_global_assignment -name VERILOG_FILE rtl/tape.v
 set_global_assignment -name VERILOG_FILE rtl/pia6520.v
 set_global_assignment -name VERILOG_FILE rtl/pet2001video.v
-set_global_assignment -name VERILOG_FILE rtl/pet2001io.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/pet2001io.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pet2001hw.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/keyboard.sv
 set_global_assignment -name SYSTEMVERILOG_FILE PET2001.sv
+set_global_assignment -name QIP_FILE rtl/ieee_drive/ieee_drive.qip

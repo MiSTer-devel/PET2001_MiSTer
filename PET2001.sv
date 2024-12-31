@@ -181,7 +181,7 @@ assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 
-assign LED_USER  = tape_led | ioctl_download;
+assign LED_USER  = tape_led | |drive_led | ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = 0;
@@ -202,16 +202,34 @@ video_freak video_freak
 	.SCALE(status[14:13])
 );
 
+localparam NDRIVES=2;
+
 `include "build_id.v" 
 localparam CONF_STR = 
 {
 	"PET2001;;",
-	"-;",
+	"HAO[20],Drive #8 Type,8250,4040;",
+	"H0H2S0,D80D82, Mount #8.0;",
+	"H0H2S1,D80D82, Mount #8.1;",
+	"H0h2S0,D64, Mount #8.0;",
+	"H0h2S1,D64, Mount #8.1;",
+	"H0-;",
+	"HBO[21],Drive #9 Type,8250,4040;",
+	"H1H3S2,D80D82, Mount #9.0;",
+	"H1H3S3,D80D82, Mount #9.1;",
+	"H1h3S2,D64, Mount #9.0;",
+	"H1h3S3,D64, Mount #9.1;",
+	"H1-;",
 	"F1,TAPPRG;",
-	"O78,TAP mode,Fast,Normal,Normal+Sound;",
 	"-;",
-	"O9A,CPU Speed,Normal,x2,x4,x8;",
-	"O3,Diag,Off,On(needs Reset);",
+	"P1,Hardware;",
+	"P1O[17:16],Enable Drive #8,If Mounted,Always,Never;",
+	"P1O[19:18],Enable Drive #9,If Mounted,Always,Never;",
+	"P1R[15],Reset Drives;",
+	"P1-;",
+	"P1O78,TAP mode,Fast,Normal,Normal+Sound;",
+	"P1O9A,CPU Speed,Normal,x2,x4,x8;",
+	"P1O3,Diag,Off,On(needs Reset);",
 	"-;",
 	"O2,Screen Color,White,Green;",
 	"OBC,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
@@ -225,6 +243,8 @@ localparam CONF_STR =
 };
 
 ////////////////////   CLOCKS   ///////////////////
+
+localparam CLK = 56_000_000;
 
 wire clk_sys;
 wire pll_locked;
@@ -310,6 +330,8 @@ end
 
 ///////////////////////////////////////////////////
 
+localparam NDU = NDRIVES*2;
+
 wire [31:0] status;
 wire  [1:0] buttons;
 
@@ -322,14 +344,47 @@ reg         ioctl_wait = 0;
 wire [10:0] ps2_key;
 wire        forced_scandoubler;
 
-hps_io #(.CONF_STR(CONF_STR)) hps_io
+wire    [31:0] sd_lba[NDU];
+wire     [5:0] sd_blk_cnt[NDU];
+wire [NDU-1:0] sd_rd;
+wire [NDU-1:0] sd_wr;
+wire [NDU-1:0] sd_ack;
+wire    [12:0] sd_buff_addr;
+wire     [7:0] sd_buff_dout;
+wire     [7:0] sd_buff_din[NDU];
+wire           sd_buff_wr;
+wire [NDU-1:0] img_mounted;
+wire    [31:0] img_size;
+wire           img_readonly;
+
+hps_io #(.CONF_STR(CONF_STR), .VDNUM(NDU), .BLKSZ(1)) hps_io
 (
 	.clk_sys(clk_sys),
 	.HPS_BUS(HPS_BUS),
 
 	.buttons(buttons),
 	.status(status),
-   .forced_scandoubler(forced_scandoubler),
+	.status_menumask({
+		/* 3 */ status[21], // drive #9 type
+		/* 2 */ status[20], // drive #8 type
+		/* 1 */ status[19], // drive #9 enabled
+		/* 0 */ status[17], // drive #8 enabled
+	}),
+	.forced_scandoubler(forced_scandoubler),
+
+	.sd_lba(sd_lba),
+	.sd_blk_cnt(sd_blk_cnt),
+	.sd_rd(sd_rd),
+	.sd_wr(sd_wr),
+	.sd_ack(sd_ack),
+
+	.sd_buff_addr(sd_buff_addr),
+	.sd_buff_dout(sd_buff_dout),
+	.sd_buff_din(sd_buff_din),
+	.sd_buff_wr(sd_buff_wr),
+	.img_mounted(img_mounted),
+	.img_size(img_size),
+	.img_readonly(img_readonly),
 
 	.ps2_key(ps2_key),
 
@@ -398,6 +453,9 @@ pet2001hw hw
 	.cass_read(tape_audio),
 	.diag_l(!status[3]),
 	
+	.ieee_i(ieee_bus_te),
+	.ieee_o(ieee_bus_dc),
+
 	.dma_addr(dl_addr),
 	.dma_din(dl_data),
 	.dma_dout(),
@@ -510,6 +568,41 @@ reg [18:0] act_cnt;
 wire       tape_led = act_cnt[18] ? act_cnt[17:10] <= act_cnt[7:0] : act_cnt[17:10] > act_cnt[7:0];
 always @(posedge clk_sys) if((|status[8:7] ? ce_1m : ce_7mp) && (tape_active || act_cnt[18] || act_cnt[17:0])) act_cnt <= act_cnt + 1'd1; 
 
+//////////////////////////////////////////////////////////////////////
+// IEEE Drives
+//////////////////////////////////////////////////////////////////////
+
+st_ieee_bus ieee_bus_te;
+st_ieee_bus ieee_bus_dc;
+
+wire drive_reset = reset | status[15];
+wire [1:0] drive_led;
+
+reg [3:0] drive_mounted = 0;
+always @(posedge clk_sys) begin 
+	if(img_mounted[0]) drive_mounted[0] <= |img_size;
+	if(img_mounted[1]) drive_mounted[1] <= |img_size;
+	if(img_mounted[2]) drive_mounted[2] <= |img_size;
+	if(img_mounted[3]) drive_mounted[3] <= |img_size;
+end
+
+ieee_drive #(.DRIVES(NDRIVES)) ieee_drive
+(
+	.*,
+	.CLK(CLK),
+
+	.reset({drive_reset | ((!status[19:18]) ? !drive_mounted[3:2] : status[19]),
+		     drive_reset | ((!status[17:16]) ? !drive_mounted[1:0] : status[17])}),
+
+	.pause(1'b0),
+
+	.led(drive_led),
+
+	.bus_i(ieee_bus_dc),
+	.bus_o(ieee_bus_te),
+
+	.drv_type(status[21:20])
+);
 
 //////////////////////////////////////////////////////////////////////
 // PS/2 to PET keyboard interface
