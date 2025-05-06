@@ -22,6 +22,7 @@ module ieeedrv_logic #(parameter SUBDRV=2)
 	input              ph2_f,
 
 	input        [1:0] drv_type,   // 00=8050, 01=8250, 10=4040
+	input              dos_16k,
 
 	input        [2:0] dev_id,
 	output      [NS:0] led_act,
@@ -36,7 +37,7 @@ module ieeedrv_logic #(parameter SUBDRV=2)
 
 	output      [13:0] dos_addr,
 	input        [7:0] dos_data,
-	output       [9:0] ctl_addr,
+	output      [10:0] ctl_addr,
 	input        [7:0] ctl_data,
 
 	output             drv_sel,
@@ -60,16 +61,16 @@ module ieeedrv_logic #(parameter SUBDRV=2)
 localparam NS = SUBDRV-1;
 
 assign dos_addr = un1_a[13:0];
-assign ctl_addr = uc3_a[9:0];
+assign ctl_addr = uc3_a[10:0];
 
 // ====================================================================
 // CPU DOS (6502) UN1
 // ====================================================================
 
-wire uf1_cs     = drv_type[1] ? un1_a[14:12] == 0 && un1_a[7] == 0    : un1_a[15:12] == 0 && un1_a[7] == 0;     // RIOT1
-wire ue1_cs     = drv_type[1] ? un1_a[14:12] == 0 && un1_a[7] == 1    : un1_a[15:12] == 0 && un1_a[7] == 1;     // RIOT2
-wire un1_ram_cs = drv_type[1] ? un1_a[14:12] >= 1 && un1_a[14:12] < 5 : un1_a[15:12] >= 1 && un1_a[15:12] < 5;  // RAM
-wire un1_rom_cs = drv_type[1] ? un1_a[14:12] >= 5                     : un1_a[15];                              // ROM
+wire uf1_cs     = dos_16k ? un1_a[15:12] == 0 && un1_a[7] == 0              : un1_a[14:12] == 0 && un1_a[7] == 0;     // RIOT1
+wire ue1_cs     = dos_16k ? un1_a[15:12] == 0 && un1_a[7] == 1              : un1_a[14:12] == 0 && un1_a[7] == 1;     // RIOT2
+wire un1_ram_cs = dos_16k ? un1_a[15:12] >= 1 && un1_a[15:12] < 5           : un1_a[14:12] >= 1 && un1_a[14:12] < 5;  // RAM
+wire un1_rom_cs = dos_16k ? un1_a[15] || (drv_type[1] && un1_a[14:12] >= 5) : un1_a[14:12] >= 5;                      // ROM
 
 wire  [7:0] un1_di =
 	!un1_rw     ? un1_do :
@@ -194,7 +195,7 @@ M6532 ue1
 wire uc5_cs     = uc3_a[12:10] == 0 && uc3_a[6] == 0;      // RRIOT RAM or I/O
 wire ud5_cs     = uc3_a[12:10] == 0 && uc3_a[6] == 1;      // VIA
 wire uc3_ram_cs = uc3_a[12:10] >= 1 && uc3_a[12:10] < 5;
-wire uc5_rom_cs = uc3_a[12:10] == 7;                       // RRIOT ROM
+wire uc5_rom_cs = uc3_a[12:10] >= 6;                       // RRIOT ROM
 
 wire  [7:0] uc3_di =
 	!uc3_rw     ? uc3_do :

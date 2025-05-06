@@ -69,7 +69,7 @@ always_ff @(posedge clk) begin
 				else
 					d_out <= {interrupt[7:6], 6'd0};
 			end
-		end
+	end
 
 	if (~res_n)
 		d_out <= 8'hFF;

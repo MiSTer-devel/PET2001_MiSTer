@@ -601,7 +601,12 @@ ieee_drive #(.DRIVES(NDRIVES)) ieee_drive
 	.bus_i(ieee_bus_dc),
 	.bus_o(ieee_bus_te),
 
-	.drv_type(status[21:20])
+	.drv_type(status[21:20]),
+
+	.rom_wr(0),
+	.rom_sel(0),
+	.rom_addr(0),
+	.rom_data(0)
 );
 
 //////////////////////////////////////////////////////////////////////

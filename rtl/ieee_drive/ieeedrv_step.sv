@@ -14,21 +14,21 @@
  */
 
 module ieeedrv_step (
-	input            clk_sys,
-	input            reset,
+   input            clk_sys,
+   input            reset,
 
 	input            drv_type,
 
-	input            we,
+   input            we,
 
-	input            img_mounted,
-	input            act,
+   input            img_mounted,
+   input            act,
 
-	input            mtr,
-	input      [1:0] stp,
+   input            mtr,
+   input      [1:0] stp,
 
-	output reg       save_track,
-	output     [6:0] track
+   output reg       save_track,
+   output     [6:0] track
 );
 
 // For 4040 "6530-34 RIOT DOS 2" part #901466-04 
@@ -56,7 +56,7 @@ always @(posedge clk_sys) begin
 		htrack <= DIR_HTRACK;
 		track_modified <= 0;
 	end
-	else begin
+   else begin
 		if (mtr && move[0]) begin
 			if (!move[1] && htrack < MAX_HTRACK) htrack <= htrack + 1'b1;
 			if ( move[1] && htrack > 0         ) htrack <= htrack - 1'b1;

@@ -18,7 +18,7 @@
 	parameter SUBDRV=2
 )
 (
-   input       [31:0] CLK,
+	input       [31:0] CLK,
 
 	input              clk_sys,
 	input       [ND:0] reset,
@@ -28,7 +28,7 @@
 	output      [ND:0] led,
 
 	input  st_ieee_bus bus_i,
-   output st_ieee_bus bus_o,
+	output st_ieee_bus bus_o,
 
 	input       [ND:0] drv_type,
 
@@ -44,7 +44,12 @@
 	input       [12:0] sd_buff_addr,
 	input        [7:0] sd_buff_dout,
 	output       [7:0] sd_buff_din[NBD],
-	input              sd_buff_wr
+	input              sd_buff_wr,
+
+	input              rom_wr,
+	input              rom_sel,
+	input       [14:0] rom_addr,
+	input        [7:0] rom_data
 );
 
 localparam NDR = (DRIVES < 1) ? 1 : (DRIVES > 4) ? 4 : DRIVES;  // number of drives
@@ -85,7 +90,7 @@ st_ieee_bus drv_bus[NDR];
 
 ieeedrv_bus_sync bus_sync(clk_sys, bus_i, drv_bus_i);
 
-wire [NS:0] led_act[NBD];
+wire [NS:0] led_act[NDR];
 wire [ND:0] led_err;
 wire        blink_err = err_count[21];
 
@@ -134,18 +139,28 @@ wire  [7:0] dos_data[NDR], dos4040_data, dos8250_data;
 wire  [1:0] dos_select;
 wire [13:0] dos_rom_addr;
 
-ieeedrv_rom #(8,14,12288,"rtl/ieee_drive/roms/c4040_dos.mif") c4040_dos_rom
+ieeedrv_rom #(8,14,16384,"rtl/ieee_drive/roms/c4040_dos.mif") c4040_dos_rom
 (
-   .clock_a(clk_sys),
-   .address_a({dos_rom_addr[13:12]-2'b1, dos_rom_addr[11:0]}),
-   .q_a(dos4040_data)
+	.clock_a(clk_sys),
+	.address_a(dos_rom_addr),
+	.q_a(dos4040_data),
+
+	.clock_b(clk_sys),
+	.wren_b(rom_wr && rom_sel && !rom_addr[14]),
+	.address_b(rom_addr[13:0]),
+	.data_b(rom_data)
 );
 
 ieeedrv_rom #(8,14,16384,"rtl/ieee_drive/roms/c8250_dos.mif") c8250_dos_rom
 (
-   .clock_a(clk_sys),
-   .address_a(dos_rom_addr),
-   .q_a(dos8250_data)
+	.clock_a(clk_sys),
+	.address_a(dos_rom_addr),
+	.q_a(dos8250_data),
+
+	.clock_b(clk_sys),
+	.wren_b(rom_wr && !rom_sel && !rom_addr[14]),
+	.address_b(rom_addr[13:0]),
+	.data_b(rom_data)
 );
 
 ieee_rommux #(NDR,14) dos_rom_mux (
@@ -158,31 +173,50 @@ ieee_rommux #(NDR,14) dos_rom_mux (
 	.drv_data(dos_data)
 );
 
+reg c4040_dos_16k = 0;
+always @(posedge clk_sys) begin
+	if (rom_wr && rom_sel && !rom_addr)
+		c4040_dos_16k <= 0;
+
+	if (rom_wr && rom_sel && ~|rom_addr[14:12] && |rom_data && ~&rom_data)
+		c4040_dos_16k <= 1;
+end
+
 // ====================================================================
 // Controller ROM
 // ====================================================================
 
-wire  [9:0] ctl_addr[NDR];
+wire [10:0] ctl_addr[NDR];
 wire  [7:0] ctl_data[NDR], ctl4040_data, ctl8250_data;
 
 wire  [1:0] ctl_select;
-wire  [9:0] ctl_rom_addr;
+wire [10:0] ctl_rom_addr;
 
-ieeedrv_rom #(8,10,1024,"rtl/ieee_drive/roms/c4040_ctl.mif") c4040_controller_rom
+ieeedrv_rom #(8,11,2048,"rtl/ieee_drive/roms/c4040_ctl.mif") c4040_controller_rom
 (
-   .clock_a(clk_sys),
-   .address_a(ctl_rom_addr),
-   .q_a(ctl4040_data)
+	.clock_a(clk_sys),
+	.address_a(ctl_rom_addr),
+	.q_a(ctl4040_data),
+
+	.clock_b(clk_sys),
+	.wren_b(rom_wr && rom_sel && rom_addr[14:11] == 'b1000),
+	.address_b(rom_addr[10:0]),
+	.data_b(rom_data)
 );
 
-ieeedrv_rom #(8,10,1024,"rtl/ieee_drive/roms/c8250_ctl.mif") c8250_controller_rom
+ieeedrv_rom #(8,11,2048,"rtl/ieee_drive/roms/c8250_ctl.mif") c8250_controller_rom
 (
-   .clock_a(clk_sys),
-   .address_a(ctl_rom_addr),
-   .q_a(ctl8250_data)
+	.clock_a(clk_sys),
+	.address_a(ctl_rom_addr),
+	.q_a(ctl8250_data),
+
+	.clock_b(clk_sys),
+	.wren_b(rom_wr && !rom_sel && rom_addr[14:11] == 'b1000),
+	.address_b(rom_addr[10:0]),
+	.data_b(rom_data)
 );
 
-ieee_rommux #(NDR,10) controller_rom_mux (
+ieee_rommux #(NDR,11) controller_rom_mux (
 	.clk(clk_sys),
 	.ph2(ph2_r),
 	.drv_addr(ctl_addr),
@@ -209,7 +243,7 @@ generate
 			.ph2_r(ph2_r),
 
 			.clk_sys(clk_sys),
-			.reset(reset[d]),
+			.reset(reset[d] | rom_wr),
 
 			.dev_id(3'(d)),
 			.bus_i(drv_bus_i & bus_o),
@@ -219,6 +253,7 @@ generate
 			.led_err(led_err[d]),
 
 			.drv_type(drv_type[d]),
+			.dos_16k(c4040_dos_16k | ~drv_type[d]),
 
 			.dos_addr(dos_addr[d]),
 			.dos_data(dos_data[d]),

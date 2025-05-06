@@ -31,6 +31,7 @@ module ieeedrv_drv #(parameter SUBDRV=2)
    output st_ieee_bus bus_o,
 
 	input              drv_type,
+	input              dos_16k,
 
 	input       [NS:0] img_mounted,
 	input       [NS:0] img_loaded,
@@ -39,7 +40,7 @@ module ieeedrv_drv #(parameter SUBDRV=2)
 
 	output      [13:0] dos_addr,
 	input        [7:0] dos_data,
-	output       [9:0] ctl_addr,
+	output      [10:0] ctl_addr,
 	input        [7:0] ctl_data,
 
 	output      [31:0] sd_lba[SUBDRV],
@@ -118,6 +119,7 @@ ieeedrv_logic #(.SUBDRV(SUBDRV)) drv_logic
 	.ph2_f(ph2_f),
 
 	.drv_type({drv_type, ~drv_type}),
+	.dos_16k(dos_16k),
 
 	.dev_id(dev_id),
 	.led_act(led_act_o),

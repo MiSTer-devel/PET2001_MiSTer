@@ -464,7 +464,7 @@ always @(posedge clk_sys) begin
 								rwState <= RW_RESET;
 							else if (!rw && sync_wr && !wprot)
 								rwState <= W_SYNC;
-							else 
+							else
 								rwState <= R_TAIL;
 						end
 						else begin
