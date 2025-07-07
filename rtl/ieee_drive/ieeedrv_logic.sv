@@ -13,13 +13,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-module ieeedrv_logic #(parameter SUBDRV=2)
-(
+module ieeedrv_logic #(
+	parameter SUBDRV=2
+)(
    input              clk_sys,
    input              reset,
 
 	input              ph2_r,
 	input              ph2_f,
+
+	input              halt_ctl,
 
 	input        [1:0] drv_type,   // 00=8050, 01=8250, 10=4040
 	input              dos_16k,
@@ -63,6 +66,11 @@ localparam NS = SUBDRV-1;
 assign dos_addr = un1_a[13:0];
 assign ctl_addr = uc3_a[10:0];
 
+wire ph2_r_dos = ph2_r;
+wire ph2_f_dos = ph2_f;
+wire ph2_r_ctl = ph2_r && !halt_ctl;
+wire ph2_f_ctl = ph2_f && !halt_ctl;
+
 // ====================================================================
 // CPU DOS (6502) UN1
 // ====================================================================
@@ -88,7 +96,7 @@ T65 un1
 (
 	.MODE(2'b00),
 	.RES_n(~reset),
-	.ENABLE(ph2_f),
+	.ENABLE(ph2_f_dos),
 	.CLK(clk_sys),
 	.IRQ_n(ue1_irq),
 	.SO_n(~reset),
@@ -111,7 +119,7 @@ assign bus_o.data = {8{~atni | reset}} | uf1_pbo;
 M6532 uf1
 (
 	.clk(clk_sys),
-	.ce(ph2_r),
+	.ce(ph2_r_dos),
 	.res_n(~reset),
 	.addr(un1_a[6:0]),
 	.RW_n(un1_rw),
@@ -170,7 +178,7 @@ assign     bus_o.ifc  = 1'b1;
 M6532 ue1
 (
 	.clk(clk_sys),
-	.ce(ph2_r),
+	.ce(ph2_r_dos),
 	.res_n(~reset),
 	.addr(un1_a[6:0]),
 	.RW_n(un1_rw),
@@ -213,7 +221,7 @@ T65 uc3
 (
 	.MODE(2'b00),
 	.RES_n(~reset),
-	.ENABLE(ph2_r),
+	.ENABLE(ph2_r_ctl),
 	.CLK(clk_sys),
 	.IRQ_n(uc5_irq),
 	.SO_n(drv_brdy_n | drv_type[1]),
@@ -243,7 +251,7 @@ assign drv_sel = uc5_pbo[0] && (SUBDRV>1);
 M6532 #(.RRIOT(1)) uc5
 (
 	.clk(clk_sys),
-	.ce(ph2_f),
+	.ce(ph2_f_ctl),
 	.res_n(~reset),
 	.addr(uc3_a[6:0]),
 	.RW_n(uc3_rw),
@@ -267,17 +275,15 @@ generate
 		always @(posedge clk_sys) begin
 			reg [21:0] cnt;
 
-			if (ph2_f) begin
-				wps[i2] <= ~img_loaded[i2] | img_readonly[i2];
+			wps[i2] <= ~img_loaded[i2] | img_readonly[i2];
 
-				if (reset) 
-					cnt <= 0;
-				else if (img_mounted[i2])
-					cnt <= '1;
-				else if (cnt) begin
-					wps[i2] <= ~cnt[21];
-					cnt <= cnt - 1'b1;
-				end
+			if (reset) 
+				cnt <= 0;
+			else if (img_mounted[i2])
+				cnt <= '1;
+			else if (cnt) begin
+				wps[i2] <= ~cnt[21];
+				if (ph2_f_ctl) cnt <= cnt - 1'b1;
 			end
 		end
 	end
@@ -307,7 +313,7 @@ via6522 ud5
 	.data_out(ud5_data),
 	.data_in(uc3_do),
 	.addr(uc3_a[3:0]),
-	.strobe(ph2_r & ud5_cs),
+	.strobe(ph2_r_ctl & ud5_cs),
 	.we(~uc3_rw),
 
 	.porta_out(ud5_pa_o),
@@ -324,7 +330,7 @@ via6522 ud5
 	.cb2_out(drv_rw),
 	.cb2_in(1'b0),
 
-	.ce(ph2_f),
+	.ce(ph2_f_ctl),
 	.clk(clk_sys),
 	.reset(reset)
 );
@@ -346,13 +352,13 @@ ieeedrv_mem #(8,12) ieeedrv_ram
 (
 	.clock_a(clk_sys),
 	.address_a({un1_a[13:12], un1_a[9:0]}),
-	.wren_a(~un1_rw & un1_ram_cs & ph2_r),
+	.wren_a(~un1_rw & un1_ram_cs & ph2_r_dos),
 	.data_a(un1_do),
 	.q_a(un1_ram_data),
 
 	.clock_b(clk_sys),
 	.address_b(uc3_a[11:0]),
-	.wren_b(~uc3_rw & uc3_ram_cs & ph2_f),
+	.wren_b(~uc3_rw & uc3_ram_cs & ph2_f_ctl),
 	.data_b(uc3_do),
 	.q_b(uc3_ram_data)
 );

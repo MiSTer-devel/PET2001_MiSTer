@@ -13,21 +13,24 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-module ieeedrv_track #(parameter SUBDRV=2)
-(
+module ieeedrv_track #(
+	parameter SUBDRV=2
+)(
 	input             clk_sys,
 	input             reset,
 	input             ce,
+	input             halt,
 
 	input             drv_type,
 
 	input      [NS:0] mounted,
-	input      [NS:0] loaded,
 
 	input      [NS:0] drv_mtr,
 	input             drv_sel,
 	input             drv_hd,
+
 	output            drv_act,
+	output            drv_changing,
 
 	output     [31:0] sd_lba[SUBDRV],
 	output      [5:0] sd_blk_cnt[SUBDRV],
@@ -36,7 +39,7 @@ module ieeedrv_track #(parameter SUBDRV=2)
 	input      [NS:0] sd_ack,
 
 	input      [NS:0] save_track,
-	input       [6:0] track[SUBDRV],
+	input       [7:0] track[SUBDRV],
 	output      [7:0] ltrack,
 
 	output reg [NS:0] busy
@@ -44,16 +47,8 @@ module ieeedrv_track #(parameter SUBDRV=2)
 
 localparam NS = SUBDRV-1;
 
-wire  [6:0] track_s[SUBDRV];
 wire [NS:0] mounted_s;
 wire        reset_s, drv_sel_s, save_track_s;
-
-generate
-	genvar d;
-	for (d=0; d<SUBDRV; d=d+1) begin :track_sync
-		ieeedrv_sync #(7) track_sync(clk_sys, track[d], track_s[d]);
-	end
-endgenerate
 
 ieeedrv_sync #(SUBDRV) mounted_sync (clk_sys, mounted,             mounted_s);
 ieeedrv_sync #(1)      sel_sync     (clk_sys, drv_sel && SUBDRV>1, drv_sel_s);
@@ -85,43 +80,46 @@ wire [12:0] START_SECTOR[2][155] = '{
 	}
 };
 
-localparam SIDE0_START = 1;
-localparam SIDE1_START = 78;
 wire [7:0] INIT_TRACK  = 8'(drv_type  ? 18 : 39);
 
-reg drv_change = 0;
+reg [10:0] chg_count = 0;
+
+assign drv_changing = &chg_count[10:2];
+wire   drv_change   = &chg_count;
 
 always @(posedge clk_sys) begin
-	reg [10:0] chg_count = 0;
-
-	drv_change <= 0;
-
 	if (SUBDRV == 1 || drv_sel_s == drv_act)
 		chg_count <= 0;
-	else if (&chg_count)
-		drv_change <= 1;
-	else if (ce)
+	else if (~&chg_count && ce && !halt)
 		chg_count <= chg_count + 1'd1;
-end
+	end
 
-`define select_track(drv, track) \
- 	busy[drv]       <= 1; \
-	ltrack          <= track; \
-	sd_blk_cnt[drv] <= 6'(START_SECTOR[drv_type][track] - START_SECTOR[drv_type][track - 1'd1] - 1); \
-	sd_lba[drv]     <= START_SECTOR[drv_type][track - 1'd1];
+`define select_track(drv, strack) \
+	busy[drv]       <= 1; \
+	ltrack          <= strack; \
+	sd_blk_cnt[drv] <= 6'(START_SECTOR[drv_type][strack] - START_SECTOR[drv_type][strack - 1'd1] - 1); \
+	sd_lba[drv]     <= START_SECTOR[drv_type][strack - 1'd1];
 
-`define read_track(drv, track)  begin `select_track(drv, track); sd_rd[drv] <= 1; end
-`define write_track(drv, track) begin `select_track(drv, track); sd_wr[drv] <= 1; end
+`define init_track(drv) \
+	`select_track(drv, INIT_TRACK); \
+	sd_rd[drv] <= 1;
+
+`define read_track(drv) \
+	if (drv != drv_act || track[drv] != ltrack) begin \
+		`select_track(drv, track[drv]); \
+		sd_rd[drv] <= 1; \
+	end
+
+`define write_track(drv) \
+	`select_track(drv, ltrack); \
+	sd_wr[drv] <= 1;
+
 
 always @(posedge clk_sys) begin
-	reg  [7:0] ltrack_new;
 	reg [NS:0] old_mounted, update;
 	reg        old_ack;
-	reg        saving = 0, initing = 0;
 	reg        old_save_track = 0;
 	reg        resetting = 0;
-
-	ltrack_new <= 8'(track_s[drv_act] + (drv_hd ? SIDE1_START : SIDE0_START));
 
 	old_mounted <= mounted_s;
 	for (integer cd=0; cd<SUBDRV; cd=cd+1)
@@ -143,63 +141,34 @@ always @(posedge clk_sys) begin
 	else if (resetting) begin
 		if (!drv_sel_s || SUBDRV==1) begin
 			resetting    <= 0;
-		   ltrack       <= '1;
-  		   saving       <= 0;
 			update       <= '1;
+			ltrack       <= '1;
 		end
 	end
-	else if (busy[drv_act]) begin
-		if (old_ack && !sd_ack[drv_act]) begin
-			busy[drv_act] <= 0;
-			saving <= 0;
-			initing <= 0;
-		
-			if ((initing || saving) && (ltrack != ltrack_new || drv_change)) begin
-				if (drv_change) begin
-					drv_act <= drv_sel_s;
-
-					update[drv_sel_s] <= 0;
-					if (update[drv_sel_s]) begin
-						initing <= 1;
-						`read_track(drv_sel_s, INIT_TRACK);
-					end
-					else begin
-						`read_track(drv_sel_s, ltrack_new);
-					end
-				end
-				else begin
-					`read_track(drv_act, ltrack_new);
-				end
-			end
-		end
-	end
-	else begin
+	else if (!busy[drv_act] || (old_ack && !sd_ack[drv_act])) begin
+		busy[drv_act] <= 0;
 		old_save_track <= save_track_s;
 
 		if ((old_save_track != save_track_s) && ~&ltrack) begin
-			saving <= 1;
-			`write_track(drv_act, ltrack);
+			`write_track(drv_act);
 		end
 		else if (drv_change) begin
 			drv_act <= drv_sel_s;
 
-			update[drv_sel_s] <= 0;
 			if (update[drv_sel_s]) begin
-				initing <= 1;
-				`read_track(drv_sel_s, INIT_TRACK);
+				update[drv_sel_s] <= 0;
+				`init_track(drv_sel_s);
 			end
 			else begin
-				`read_track(drv_sel_s, ltrack_new);
+				`read_track(drv_sel_s);
 			end
 		end
 		else if (update[drv_act]) begin
 			update[drv_act] <= 0;
-			initing <= 1;
-			`read_track(drv_act, INIT_TRACK);
+			`init_track(drv_act);
 		end
-		else if (ltrack != ltrack_new) begin
-			update[0] <= 0;
-			`read_track(drv_act, ltrack_new);
+		else begin
+			`read_track(drv_act);
 		end
 	end
 end

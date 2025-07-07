@@ -13,8 +13,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
  
-module ieeedrv_drv #(parameter SUBDRV=2)
-(
+module ieeedrv_drv #(
+	parameter SUBDRV=2,
+	parameter PAUSE_CTL=0
+)(
    input       [31:0] CLK,
 
 	input              clk_sys,
@@ -111,12 +113,16 @@ wire        drv_error;
 wire [NS:0] led_act_o;
 wire        led_err_o;
 
-ieeedrv_logic #(.SUBDRV(SUBDRV)) drv_logic
-(
+wire        halt_ctl = PAUSE_CTL && sd_busy[drv_act] && ~track_changing[drv_act];
+
+ieeedrv_logic #(
+	.SUBDRV(SUBDRV)
+) drv_logic (
 	.clk_sys(clk_sys),
 	.reset(drv_reset),
 	.ph2_r(ph2_r),
 	.ph2_f(ph2_f),
+	.halt_ctl(halt_ctl),
 
 	.drv_type({drv_type, ~drv_type}),
 	.dos_16k(dos_16k),
@@ -161,8 +167,9 @@ ieeedrv_logic #(.SUBDRV(SUBDRV)) drv_logic
 
 wire [NS:0] save_track;
 
-wire  [6:0] track[SUBDRV];
-wire        drv_act;
+wire  [7:0] track[SUBDRV];
+wire [NS:0] track_changing;
+wire        drv_act, drv_changing;
 reg  [15:0] dsk_id[SUBDRV];
 reg   [7:0] drv_sd_buff_din;
 wire        drv_we;
@@ -177,19 +184,24 @@ generate
 		ieeedrv_step drv_stepper (
 			.clk_sys(clk_sys),
 			.reset(drv_reset),
+			.ce(ce),
 
 			.drv_type(drv_type),
 
-			.we(drv_we & (drv_ready | drv_sync_o) & drv_mtr[i] & (drv_sel == i)),
-
-			.img_mounted(img_mounted[i]),
-			.act(led_act[i] & (drv_sel == i)),
+			.mounted(img_mounted[i]),
+			.selected(drv_sel == i),
+			.active(drv_act == i),
+			.changing(drv_changing),
 
 			.mtr(drv_mtr[i]),
 			.stp(drv_step[i]),
+			.rw(drv_rw),
+			.we(drv_we),
+			.hd(drv_hd),
 
 			.save_track(save_track[i]),
-			.track(track[i])
+			.track(track[i]),
+			.track_changing(track_changing[i])
 		);
 
 		always @(posedge clk_sys) begin
@@ -221,21 +233,24 @@ wire  [7:0] ltrack;
 
 ieeedrv_sync #(SUBDRV) busy_sync(clk_sys, busy, sd_busy);
 
-ieeedrv_track #(SUBDRV) drv_track
-(
+ieeedrv_track #(
+	.SUBDRV(SUBDRV)
+) drv_track (
 	.clk_sys(clk_sys),
 	.reset(drv_reset),
 	.ce(ce),
+	.halt(halt_ctl),
 
 	.drv_type(drv_type),
 
 	.mounted(img_mounted),
-	.loaded(img_loaded),
 
 	.drv_mtr(drv_mtr),
 	.drv_sel(drv_sel),
-	.drv_act(drv_act),
 	.drv_hd(drv_hd),
+
+	.drv_act(drv_act),
+	.drv_changing(drv_changing),
 
 	.sd_lba(sd_lba),
 	.sd_blk_cnt(sd_blk_cnt),
@@ -264,16 +279,21 @@ ieeedrv_trkgen #(SUBDRV) drv_trkgen
 	.drv_type(drv_type),
 	.img_type(img_type[drv_act]),
 
+	.halt(halt_ctl),
+	.invalid(track_changing[drv_act] | ~id_loaded[drv_act] | (drv_act != drv_sel)),
 	.drv_act(drv_act),
 	.drv_hd(drv_hd),
 	.mtr(drv_mtr[drv_act]),
 	.freq(drv_spd),
-	.track(ltrack),
-	.busy(sd_busy[drv_act] | ~id_loaded[drv_act]),
-	.wprot(img_readonly[drv_act]),
-	.rw(drv_rw),
 
+	.track(ltrack),
+	.id(dsk_id[drv_act]),
+	.id_hdr(id_hdr),
+	.id_wr(id_wr),
+	.wprot(img_readonly[drv_act]),
 	.we(drv_we),
+
+	.rw(drv_rw),
 	.byte_n(drv_ready),
 	.brdy_n(drv_brdy_n),
 	.error(drv_error),
@@ -289,11 +309,7 @@ ieeedrv_trkgen #(SUBDRV) drv_trkgen
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(drv_sd_buff_din),
-	.sd_buff_wr(|sd_ack & sd_buff_wr),
-
-	.id(dsk_id[drv_act]),
-	.id_hdr(id_hdr),
-	.id_wr(id_wr)
+	.sd_buff_wr(|sd_ack & sd_buff_wr)
 );
 
 endmodule

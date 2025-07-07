@@ -15,9 +15,9 @@
  
  module ieee_drive #(
 	parameter DRIVES=1,
-	parameter SUBDRV=2
-)
-(
+	parameter SUBDRV=2,
+	parameter PAUSE_CTL=0  // 1=pause controller while SD is busy (prevents timeouts if SD is slow)
+)(
 	input       [31:0] CLK,
 
 	input              clk_sys,
@@ -235,8 +235,10 @@ generate
 		localparam I0 = d*NSD;
 		localparam I1 = d*NSD+NS;
 
-		ieeedrv_drv drv
-		(
+		ieeedrv_drv #(
+			.SUBDRV(SUBDRV), 
+			.PAUSE_CTL(PAUSE_CTL)
+		) drv (
 			.CLK(CLK),
 			.ce(ce),
 			.ph2_f(ph2_f),
